@@ -1,8 +1,7 @@
-DROP TABLE IF EXISTS food;
+DROP TABLE IF EXISTS users;
 
-CREATE TABLE  food (
-    id          serial PRIMARY KEY,
-    title       varchar(40) NOT NULL
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(20) NOT NULL UNIQUE,
+  created_at DATE DEFAULT CURRENT_DATE
 );
-
-INSERT INTO food (title) VALUES ('sourdough'), ('olive oil'), ('pizza'), ('picanha'), ('gorgonzola'), ('basil');
