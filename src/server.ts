@@ -5,6 +5,14 @@ import { Client } from "pg";
 import { getEnvVarOrFail } from "./support/envVarUtils";
 import { setupDBClientConfig } from "./support/setupDBClientConfig";
 
+interface UserCandidate {
+    name: string;
+}
+
+interface User extends UserCandidate {
+    id: number;
+}
+
 dotenv.config(); //Read .env file lines as though they were env vars.
 
 const dbClientConfig = setupDBClientConfig();
@@ -27,6 +35,31 @@ app.get("/health-check", async (_req, res) => {
         res.status(200).send("system ok");
     } catch (error) {
         //Recover from error rather than letting system halt
+        console.error(error);
+        res.status(500).send("An error occurred. Check server logs.");
+    }
+});
+
+app.get<{}, User[] | string>("/users", async (_req, res) => {
+    try {
+        const result = await client.query("SELECT * FROM users");
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("An error occurred. Check server logs.");
+    }
+});
+
+app.post<{}, User | string, UserCandidate>("/users", async (req, res) => {
+    try {
+        const result = await client.query(
+            "INSERT INTO users (name) VALUES ($1) RETURNING *",
+            [req.body.name]
+        );
+        result.rowCount === 1
+            ? res.status(201).json(result.rows[0])
+            : res.status(400).send("An error occurred. Check server logs.");
+    } catch (error) {
         console.error(error);
         res.status(500).send("An error occurred. Check server logs.");
     }
