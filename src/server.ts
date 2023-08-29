@@ -11,6 +11,7 @@ interface UserCandidate {
 
 interface User extends UserCandidate {
     id: number;
+    created_at: Date;
 }
 
 dotenv.config(); //Read .env file lines as though they were env vars.
