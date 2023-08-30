@@ -4,16 +4,9 @@ import express from "express";
 import { Client } from "pg";
 import { getEnvVarOrFail } from "./support/envVarUtils";
 import { setupDBClientConfig } from "./support/setupDBClientConfig";
+import { User, UserCandidate } from "./types/db/user";
 import queryAndLog from "./utils/queryLogging";
-
-interface UserCandidate {
-    name: string;
-}
-
-interface User extends UserCandidate {
-    id: number;
-    created_at: Date;
-}
+import { Deck } from "./types/db/deck";
 
 dotenv.config(); //Read .env file lines as though they were env vars.
 
@@ -42,6 +35,7 @@ app.get("/health-check", async (_req, res) => {
     }
 });
 
+// ROUTE HANDLERS: /users
 app.get<{}, User[] | string>("/users", async (_req, res) => {
     try {
         const result = await queryAndLog(client, "SELECT * FROM users");
@@ -62,6 +56,17 @@ app.post<{}, User | string, UserCandidate>("/users", async (req, res) => {
         result.rowCount === 1
             ? res.status(201).json(result.rows[0])
             : res.status(400).send("An error occurred. Check server logs.");
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("An error occurred. Check server logs.");
+    }
+});
+
+// ROUTE HANDLERS: /decks
+app.get<{}, Deck[] | string>("/decks", async (_req, res) => {
+    try {
+        const result = await queryAndLog(client, "SELECT * FROM decks");
+        res.status(200).json(result.rows);
     } catch (error) {
         console.error(error);
         res.status(500).send("An error occurred. Check server logs.");
