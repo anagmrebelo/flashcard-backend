@@ -4,9 +4,15 @@ import express from "express";
 import { Client } from "pg";
 import { getEnvVarOrFail } from "./support/envVarUtils";
 import { setupDBClientConfig } from "./support/setupDBClientConfig";
+import {
+    CardWithStreak,
+    Deck,
+    DeckCandidate,
+    DeckContent,
+} from "./types/db/deck";
 import { User, UserCandidate } from "./types/db/user";
 import queryAndLog from "./utils/queryLogging";
-import { Deck } from "./types/db/deck";
+import { userExists } from "./utils/helperQueries";
 
 dotenv.config(); //Read .env file lines as though they were env vars.
 
@@ -72,6 +78,100 @@ app.get<{}, Deck[] | string>("/decks", async (_req, res) => {
         res.status(500).send("An error occurred. Check server logs.");
     }
 });
+
+app.post<{}, Deck | string, DeckCandidate>("/decks", async (req, res) => {
+    try {
+        const result = await queryAndLog(
+            client,
+            "INSERT INTO decks (name) VALUES ($1) RETURNING *",
+            [req.body.name]
+        );
+        result.rowCount === 1
+            ? res.status(201).json(result.rows[0])
+            : res.status(400).send("Deck does not exist.");
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("An error occurred. Check server logs.");
+    }
+});
+
+app.patch<{ id: string }, Deck[] | string, DeckCandidate>(
+    "/decks/:id",
+    async (req, res) => {
+        try {
+            const result = await queryAndLog(
+                client,
+                "UPDATE decks SET name = $2 WHERE id = $1 RETURNING *",
+                [req.params.id, req.body.name]
+            );
+
+            result.rowCount === 1
+                ? res.status(200).json(result.rows)
+                : res.status(204).send();
+        } catch (error) {
+            console.error(error);
+            res.status(500).send("An error occurred. Check server logs.");
+        }
+    }
+);
+
+app.delete<{ id: string }>("/decks/:id", async (req, res) => {
+    try {
+        await queryAndLog(client, "DELETE FROM decks WHERE id = $1", [
+            req.params.id,
+        ]);
+
+        res.status(200).send();
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("An error occurred. Check server logs.");
+    }
+});
+
+app.get<{ id: string; userId: string }, DeckContent | string>(
+    "/decks/:id/:userId",
+    async (req, res) => {
+        if (!(await userExists(client, req.params.userId))) {
+            return res.status(400).send("User does not exist.");
+        }
+
+        try {
+            const deckResult = await queryAndLog(
+                client,
+                "SELECT * FROM decks WHERE id = $1",
+                [req.params.id]
+            );
+
+            const cardResult = await queryAndLog(
+                client,
+                `SELECT 
+	            id,
+	            question,
+	            answer,
+                created_at,
+                streaks.streak,
+                CASE
+                    WHEN CURRENT_DATE - streaks.next_review_date > 0 THEN false
+                    ELSE true
+                END AS needs_review
+                FROM cards
+                LEFT JOIN streaks
+                    ON streaks.card_id = cards.id
+                    AND streaks.user_id = $2
+                WHERE cards.deck_id = $1
+                ORDER BY created_at`,
+                [req.params.id, req.params.userId]
+            );
+
+            const deckInfo: Deck = deckResult.rows[0];
+            const cardInfo: CardWithStreak[] = cardResult.rows;
+            res.status(200).json({ ...deckInfo, cards: cardInfo });
+        } catch (error) {
+            console.error(error);
+            res.status(500).send("An error occurred. Check server logs.");
+        }
+    }
+);
 
 connectToDBAndStartListening();
 
