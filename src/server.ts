@@ -4,6 +4,7 @@ import express from "express";
 import { Client } from "pg";
 import { getEnvVarOrFail } from "./support/envVarUtils";
 import { setupDBClientConfig } from "./support/setupDBClientConfig";
+import queryAndLog from "./utils/queryLogging";
 
 interface UserCandidate {
     name: string;
@@ -43,7 +44,7 @@ app.get("/health-check", async (_req, res) => {
 
 app.get<{}, User[] | string>("/users", async (_req, res) => {
     try {
-        const result = await client.query("SELECT * FROM users");
+        const result = await queryAndLog(client, "SELECT * FROM users");
         res.status(200).json(result.rows);
     } catch (error) {
         console.error(error);
@@ -53,7 +54,8 @@ app.get<{}, User[] | string>("/users", async (_req, res) => {
 
 app.post<{}, User | string, UserCandidate>("/users", async (req, res) => {
     try {
-        const result = await client.query(
+        const result = await queryAndLog(
+            client,
             "INSERT INTO users (name) VALUES ($1) RETURNING *",
             [req.body.name]
         );
