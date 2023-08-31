@@ -4,16 +4,18 @@ import express from "express";
 import { Client } from "pg";
 import { getEnvVarOrFail } from "./support/envVarUtils";
 import { setupDBClientConfig } from "./support/setupDBClientConfig";
+import { Card, CardCandidate } from "./types/db/card";
 import {
     CardWithStreak,
     Deck,
     DeckCandidate,
     DeckContent,
 } from "./types/db/deck";
+import { Streak, StreakCandidate } from "./types/db/streak";
 import { User, UserCandidate } from "./types/db/user";
+import { rowExists } from "./utils/helperQueries";
 import queryAndLog from "./utils/queryLogging";
-import { userExists } from "./utils/helperQueries";
-import { Card, CardCandidate } from "./types/db/card";
+import { getReviewDay } from "./utils/streakReviewDate";
 
 dotenv.config(); //Read .env file lines as though they were env vars.
 
@@ -117,6 +119,7 @@ app.patch<{ id: string }, Deck[] | string, DeckCandidate>(
 );
 
 app.delete<{ id: string }>("/decks/:id", async (req, res) => {
+    // TODO: delete streaks and cards before deleting deck
     try {
         await queryAndLog(client, "DELETE FROM decks WHERE id = $1", [
             req.params.id,
@@ -132,7 +135,7 @@ app.delete<{ id: string }>("/decks/:id", async (req, res) => {
 app.get<{ id: string; userId: string }, DeckContent | string>(
     "/decks/:id/:userId",
     async (req, res) => {
-        if (!(await userExists(client, req.params.userId))) {
+        if (!(await rowExists(client, "users", req.params.userId))) {
             return res.status(400).send("User does not exist.");
         }
 
@@ -152,7 +155,7 @@ app.get<{ id: string; userId: string }, DeckContent | string>(
                 created_at,
                 streaks.streak,
                 CASE
-                    WHEN CURRENT_DATE - streaks.next_review_date > 0 THEN false
+                    WHEN CURRENT_DATE - streaks.next_review_date < 0 THEN false
                     ELSE true
                 END AS needs_review
                 FROM cards
@@ -175,7 +178,6 @@ app.get<{ id: string; userId: string }, DeckContent | string>(
 );
 
 // ROUTE HANDLERS: /cards
-
 app.post<{}, Card | string, CardCandidate>("/cards", async (req, res) => {
     try {
         const { question, answer, deck_id } = req.body;
@@ -192,6 +194,113 @@ app.post<{}, Card | string, CardCandidate>("/cards", async (req, res) => {
         res.status(500).send("An error occurred. Check server logs.");
     }
 });
+
+app.patch<{ id: string }, Card[] | string, Omit<CardCandidate, "deck_id">>(
+    "/cards/:id",
+    async (req, res) => {
+        try {
+            const { question, answer } = req.body;
+            const result = await queryAndLog(
+                client,
+                "UPDATE cards SET question = $2, answer = $3 WHERE id = $1 RETURNING *",
+                [req.params.id, question, answer]
+            );
+
+            result.rowCount === 1
+                ? res.status(200).json(result.rows)
+                : res.status(204).send();
+        } catch (error) {
+            console.error(error);
+            res.status(500).send("An error occurred. Check server logs.");
+        }
+    }
+);
+
+app.delete<{ id: string }>("/cards/:id", async (req, res) => {
+    try {
+        await queryAndLog(client, "DELETE FROM streaks WHERE card_id = $1", [
+            req.params.id,
+        ]);
+        await queryAndLog(client, "DELETE FROM cards WHERE id = $1", [
+            req.params.id,
+        ]);
+
+        res.status(200).send();
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("An error occurred. Check server logs.");
+    }
+});
+
+// ROUTE HANDLERS: /streaks
+app.put<
+    { cardId: string; userId: string },
+    Streak | string,
+    Pick<StreakCandidate, "streak">
+>("/streaks/:cardId/:userId", async (req, res) => {
+    try {
+        const { streak } = req.body;
+
+        if (streak < 1) {
+            return res.status(400).send("Cannot send streak below 1.");
+        }
+
+        const daysToReview = getReviewDay(streak);
+        const result = await queryAndLog(
+            client,
+            `INSERT INTO streaks (
+                user_id,
+                card_id,
+                streak,
+                next_review_date
+            ) VALUES (
+                $1,
+                $2,
+                $3, 
+                CURRENT_DATE + ${daysToReview}
+            ) ON CONFLICT (user_id, card_id)
+                DO UPDATE
+                SET streak = $3, 
+                    next_review_date = CURRENT_DATE + ${daysToReview}
+            RETURNING *`,
+            [req.params.userId, req.params.cardId, streak]
+        );
+
+        result.rowCount === 1
+            ? res.status(201).json(result.rows[0])
+            : res.status(400).send("Streak not created/updated.");
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("An error occurred. Check server logs.");
+    }
+});
+
+app.delete<{ cardId: string; userId: string }>(
+    "/streaks/:cardId/:userId",
+    async (req, res) => {
+        try {
+            const { cardId, userId } = req.params;
+            if (!(await rowExists(client, "cards", cardId))) {
+                return res.status(400).send("Card does not exist.");
+            }
+
+            if (!(await rowExists(client, "users", userId))) {
+                return res.status(400).send("User does not exist.");
+            }
+
+            await queryAndLog(
+                client,
+                "DELETE FROM streaks WHERE card_id = $1 AND user_id = $2",
+                [cardId, userId]
+            );
+
+            res.status(200).send();
+        } catch (error) {
+            console.error(error);
+            res.status(500).send("An error occurred. Check server logs.");
+        }
+    }
+);
 
 connectToDBAndStartListening();
 
