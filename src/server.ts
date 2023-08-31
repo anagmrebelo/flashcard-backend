@@ -13,6 +13,7 @@ import {
 import { User, UserCandidate } from "./types/db/user";
 import queryAndLog from "./utils/queryLogging";
 import { userExists } from "./utils/helperQueries";
+import { Card, CardCandidate } from "./types/db/card";
 
 dotenv.config(); //Read .env file lines as though they were env vars.
 
@@ -88,7 +89,7 @@ app.post<{}, Deck | string, DeckCandidate>("/decks", async (req, res) => {
         );
         result.rowCount === 1
             ? res.status(201).json(result.rows[0])
-            : res.status(400).send("Deck does not exist.");
+            : res.status(400).send("Deck not created.");
     } catch (error) {
         console.error(error);
         res.status(500).send("An error occurred. Check server logs.");
@@ -172,6 +173,25 @@ app.get<{ id: string; userId: string }, DeckContent | string>(
         }
     }
 );
+
+// ROUTE HANDLERS: /cards
+
+app.post<{}, Card | string, CardCandidate>("/cards", async (req, res) => {
+    try {
+        const { question, answer, deck_id } = req.body;
+        const result = await queryAndLog(
+            client,
+            "INSERT INTO cards (question, answer, deck_id) VALUES ($1, $2, $3) RETURNING *",
+            [question, answer, deck_id.toString()]
+        );
+        result.rowCount === 1
+            ? res.status(201).json(result.rows[0])
+            : res.status(400).send("Card not created.");
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("An error occurred. Check server logs.");
+    }
+});
 
 connectToDBAndStartListening();
 
