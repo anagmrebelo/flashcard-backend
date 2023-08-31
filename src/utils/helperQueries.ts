@@ -1,10 +1,10 @@
 import { Client } from "pg";
 import queryAndLog from "./queryLogging";
 
-export async function userExists(client: Client, id: string) {
+export async function rowExists(client: Client, tableName: string, id: string) {
     const result = await queryAndLog(
         client,
-        "SELECT 1 FROM users WHERE id = $1",
+        `SELECT 1 FROM ${tableName} WHERE id = $1`,
         [id]
     );
 
