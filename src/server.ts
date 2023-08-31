@@ -119,8 +119,30 @@ app.patch<{ id: string }, Deck[] | string, DeckCandidate>(
 );
 
 app.delete<{ id: string }>("/decks/:id", async (req, res) => {
-    // TODO: delete streaks and cards before deleting deck
     try {
+        if (!(await rowExists(client, "decks", req.params.id))) {
+            return res.status(400).send("Deck does not exist.");
+        }
+
+        const result = await queryAndLog(
+            client,
+            "SELECT id FROM cards WHERE deck_id = $1",
+            [req.params.id]
+        );
+        const cardIds = result.rows.flatMap(({ id }) => id);
+
+        for (const cardId of cardIds) {
+            await queryAndLog(
+                client,
+                "DELETE FROM streaks WHERE card_id = $1",
+                [cardId]
+            );
+
+            await queryAndLog(client, "DELETE FROM cards WHERE id = $1", [
+                cardId,
+            ]);
+        }
+
         await queryAndLog(client, "DELETE FROM decks WHERE id = $1", [
             req.params.id,
         ]);
@@ -137,6 +159,10 @@ app.get<{ id: string; userId: string }, DeckContent | string>(
     async (req, res) => {
         if (!(await rowExists(client, "users", req.params.userId))) {
             return res.status(400).send("User does not exist.");
+        }
+
+        if (!(await rowExists(client, "decks", req.params.id))) {
+            return res.status(400).send("Deck does not exist.");
         }
 
         try {
@@ -218,6 +244,10 @@ app.patch<{ id: string }, Card[] | string, Omit<CardCandidate, "deck_id">>(
 
 app.delete<{ id: string }>("/cards/:id", async (req, res) => {
     try {
+        if (!(await rowExists(client, "cards", req.params.id))) {
+            return res.status(400).send("Card does not exist.");
+        }
+
         await queryAndLog(client, "DELETE FROM streaks WHERE card_id = $1", [
             req.params.id,
         ]);
