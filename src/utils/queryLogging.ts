@@ -11,7 +11,11 @@ function addLeftPad(target: number | string, padding: number, filler = " ") {
     }
 }
 
-async function queryAndLog(client: Client, sql: string, params: string[] = []) {
+async function queryAndLog(
+    client: Client,
+    sql: string,
+    params: (string | number)[] = []
+) {
     const qNum = queryCounter++;
     const qNumFmt = addLeftPad(qNum, 4, "0");
     const startTime = performance.now();
