@@ -1,5 +1,26 @@
+import dotenv from "dotenv";
 import { performance } from "perf_hooks";
 import { Client } from "pg";
+
+dotenv.config(); //read any .env file(s)
+
+if (!process.env.DATABASE_URL) {
+    throw "No DATABASE_URL env var provided.  Did you create an .env file?";
+}
+
+const config = {
+    connectionString: process.env.DATABASE_URL,
+};
+
+const client = new Client(config);
+
+const connectToDb = async () => {
+    console.log("Attempting to connect to db");
+    await client.connect();
+    console.log("Connected to db!");
+};
+
+connectToDb();
 
 let queryCounter = 1;
 
@@ -11,8 +32,7 @@ function addLeftPad(target: number | string, padding: number, filler = " ") {
     }
 }
 
-async function queryAndLog(
-    client: Client,
+export async function queryAndLog(
     sql: string,
     params: (string | number)[] = []
 ) {
@@ -34,5 +54,3 @@ async function queryAndLog(
 
     return result;
 }
-
-export default queryAndLog;
